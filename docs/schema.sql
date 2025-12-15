@@ -127,7 +127,8 @@ create table if not exists documentos (
 create table if not exists documentos_embeddings (
   id uuid primary key default gen_random_uuid(),
   documento_id uuid references documentos(id) on delete cascade,
-  embedding vector,
+  -- defina a dimensao conforme o modelo de embeddings usado (ex: 1536 para text-embedding-3-large)
+  embedding vector(1536),
   chunk text,
   ordem int
 );
