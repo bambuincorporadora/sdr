@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+langchain
+langchain-openai
+langchain-community
+pgvector
+supabase
+psycopg[binary]
+pydantic-settings
+httpx
+celery
+redis
+python-dotenv
+openai

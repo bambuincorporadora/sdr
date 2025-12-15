@@ -1,0 +1,23 @@
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
+from app.config import get_settings
+from app.prompts.templates import MAIN_SYSTEM_PROMPT
+
+settings = get_settings()
+
+llm = ChatOpenAI(model=settings.llm_model, temperature=0)
+
+prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            MAIN_SYSTEM_PROMPT
+            + " Classifique a intencao do lead em seguir, encerrar, pergunta ou ruido. "
+            "Retorne JSON com campos label e rationale. Se pergunta, label=pergunta.",
+        ),
+        ("human", "{input}"),
+    ]
+)
+
+intention_router = prompt | llm.with_structured_output({"label": "string", "rationale": "string"})

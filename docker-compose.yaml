@@ -1,0 +1,52 @@
+version: "3.9"
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-dev}
+      - EVOLUTION_BASE_URL=${EVOLUTION_BASE_URL}
+      - EVOLUTION_TOKEN=${EVOLUTION_TOKEN}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-large}
+      - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REENGAGEMENT_MINUTES=${REENGAGEMENT_MINUTES:-30,180,360}
+    depends_on:
+      - redis
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir backend
+
+  reengagement:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-dev}
+      - EVOLUTION_BASE_URL=${EVOLUTION_BASE_URL}
+      - EVOLUTION_TOKEN=${EVOLUTION_TOKEN}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-large}
+      - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REENGAGEMENT_MINUTES=${REENGAGEMENT_MINUTES:-30,180,360}
+    depends_on:
+      - api
+      - redis
+    command: >
+      python scripts/reengagement_runner.py
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
