@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     redis_url: str = "redis://localhost:6379/0"
 
-    _reengagement_minutes_raw: str = Field(
+    reengagement_minutes_raw: str = Field(
         default="30,180,360", alias="REENGAGEMENT_MINUTES"
     )
 
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     @property
     def reengagement_minutes(self) -> list[int]:
-        raw = self._reengagement_minutes_raw
+        raw = self.reengagement_minutes_raw
         if isinstance(raw, str):
             cleaned = raw.replace("[", "").replace("]", "")
             parts = [p.strip() for p in cleaned.split(",") if p.strip()]
