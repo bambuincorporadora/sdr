@@ -1,6 +1,7 @@
 from typing import Any
+import json
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 
 from app.jobs.transcription import process_transcription
@@ -71,7 +72,12 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
 
 
 @router.post("/evolution")
-async def evolution_webhook(payload: Any, tasks: BackgroundTasks):
+async def evolution_webhook(request: Request, tasks: BackgroundTasks):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="Body JSON invalido")
+
     evo_msg = parse_evolution_payload(payload)
 
     conversa = await conversation_service.ensure_active_conversation(
