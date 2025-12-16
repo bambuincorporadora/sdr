@@ -1,6 +1,6 @@
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains.retrieval import create_retrieval_chain
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_community.vectorstores import SupabaseVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
@@ -30,5 +30,17 @@ prompt = ChatPromptTemplate.from_template(
     "Contexto:\n{context}\n\nPergunta: {input}"
 )
 
-combine_docs_chain = create_stuff_documents_chain(llm, prompt)
-qa_chain = create_retrieval_chain(retriever, combine_docs_chain)
+# Formata documentos concatenando conteudo
+def _format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
+
+# RAG chain na sintaxe LCEL (LangChain 0.2+), sem uso de langchain.chains.*
+qa_chain = (
+    {
+        "context": retriever | RunnableLambda(_format_docs),
+        "input": RunnablePassthrough(),
+    }
+    | prompt
+    | llm
+    | StrOutputParser()
+)
