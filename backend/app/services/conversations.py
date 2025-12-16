@@ -19,20 +19,24 @@ class ConversationService:
     async def _run(self, fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
 
-    async def get_or_create_lead(self, contato: str, canal: str = "whatsapp") -> Any:
+    async def get_or_create_lead(self, contato: str, canal: str = "whatsapp", nome: str | None = None) -> Any:
         def _get_or_create():
             existing = (
                 self.client.table("leads")
-                .select("id")
+                .select("id,nome")
                 .eq("contato", contato)
                 .limit(1)
                 .execute()
             )
             if existing.data:
-                return existing.data[0]
+                lead = existing.data[0]
+                # atualiza nome se estava vazio e recebemos agora
+                if nome and not lead.get("nome"):
+                    self.client.table("leads").update({"nome": nome}).eq("id", lead["id"]).execute()
+                return lead
             created = (
                 self.client.table("leads")
-                .insert({"contato": contato, "canal": canal})
+                .insert({"contato": contato, "canal": canal, "nome": nome})
                 .execute()
             )
             return created.data[0]
@@ -78,9 +82,9 @@ class ConversationService:
         return res.data[0]
 
     async def ensure_active_conversation(
-        self, contato: str, canal: str = "whatsapp", conversa_id: str | None = None
+        self, contato: str, canal: str = "whatsapp", conversa_id: str | None = None, nome: str | None = None
     ) -> Any:
-        lead = await self.get_or_create_lead(contato, canal)
+        lead = await self.get_or_create_lead(contato, canal, nome)
         lead_id = lead["id"]
 
         if conversa_id:

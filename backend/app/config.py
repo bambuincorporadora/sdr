@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     environment: str = "dev"
     evolution_base_url: str = ""
     evolution_token: str = ""
+    evolution_instance: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
     openai_api_key: str = ""

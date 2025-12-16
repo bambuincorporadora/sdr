@@ -25,6 +25,7 @@ class EvolutionMessage(BaseModel):
     conteudo: str | None = None  # texto ou url de midia
     canal: str = "whatsapp"
     conversa_id: str | None = None
+    nome: str | None = None
 
 
 def parse_evolution_payload(raw: Any) -> EvolutionMessage:
@@ -51,6 +52,7 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
         contato = contato.replace("@s.whatsapp.net", "")
     mensagem_id = key.get("id") or ""
     message_type = data.get("messageType") or ""
+    nome = data.get("pushName") or raw.get("pushName") or None
 
     # mapeia tipos
     if message_type == "conversation":
@@ -72,6 +74,7 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
         tipo=tipo,
         conteudo=conteudo,
         canal="whatsapp",
+        nome=nome,
         conversa_id=None,
     )
 
@@ -95,7 +98,7 @@ async def evolution_webhook(request: Request, tasks: BackgroundTasks):
         return {"status": "ignored", "reason": "parse_error"}
 
     conversa = await conversation_service.ensure_active_conversation(
-        contato=evo_msg.contato, canal=evo_msg.canal, conversa_id=evo_msg.conversa_id
+        contato=evo_msg.contato, canal=evo_msg.canal, conversa_id=evo_msg.conversa_id, nome=evo_msg.nome
     )
     evo_msg.conversa_id = conversa["id"]
 
