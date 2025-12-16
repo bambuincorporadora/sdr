@@ -1,5 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 from app.config import get_settings
 from app.prompts.templates import MAIN_SYSTEM_PROMPT
@@ -7,6 +8,11 @@ from app.prompts.templates import MAIN_SYSTEM_PROMPT
 settings = get_settings()
 
 llm = ChatOpenAI(model=settings.llm_model, temperature=0)
+
+
+class IntentOutput(BaseModel):
+    label: str
+    rationale: str
 
 prompt = ChatPromptTemplate.from_messages(
     [
@@ -20,4 +26,4 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-intention_router = prompt | llm.with_structured_output({"label": "string", "rationale": "string"})
+intention_router = prompt | llm.with_structured_output(schema=IntentOutput)
