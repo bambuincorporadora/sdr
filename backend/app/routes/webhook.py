@@ -47,6 +47,8 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
     message = data.get("message") or {}
 
     contato = key.get("remoteJid") or key.get("remoteJidAlt") or body.get("sender") or ""
+    if contato and "@s.whatsapp.net" in contato:
+        contato = contato.replace("@s.whatsapp.net", "")
     mensagem_id = key.get("id") or ""
     message_type = data.get("messageType") or ""
 
