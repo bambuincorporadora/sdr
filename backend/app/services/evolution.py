@@ -1,8 +1,17 @@
+import logging
+
 import httpx
 
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def _mask_contact(contato: str) -> str:
+    if not contato:
+        return ""
+    return f"...{contato[-4:]}"
 
 
 class EvolutionClient:
@@ -14,7 +23,7 @@ class EvolutionClient:
 
     async def send_text(self, contato: str, texto: str) -> None:
         if not self.base_url:
-            print("[evolution] base_url nao configurada, ignorando envio")
+            logger.warning("Evolution base_url nao configurada, texto descartado destino=%s", _mask_contact(contato))
             return
         if self.instance:
             url = f"{self.base_url}/message/sendText/{self.instance}"
@@ -25,13 +34,18 @@ class EvolutionClient:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(url, json=payload, headers=self.headers)
         if resp.status_code >= 400:
-            print(f"[evolution] falha ao enviar texto: status={resp.status_code}, body={resp.text}, url={url}, payload={payload}")
+            logger.error(
+                "Falha Evolution texto status=%s destino=%s body=%s",
+                resp.status_code,
+                _mask_contact(contato),
+                resp.text[:200],
+            )
         else:
-            print(f"[evolution] texto enviado status={resp.status_code} para {contato}")
+            logger.info("Texto enviado Evolution status=%s destino=%s", resp.status_code, _mask_contact(contato))
 
     async def send_media(self, contato: str, media_url: str, media_type: str = "image") -> None:
         if not self.base_url:
-            print("[evolution] base_url nao configurada, ignorando envio de midia")
+            logger.warning("Evolution base_url nao configurada, midia descartada destino=%s", _mask_contact(contato))
             return
         if self.instance:
             url = f"{self.base_url}/message/sendFile/{self.instance}"
@@ -42,6 +56,11 @@ class EvolutionClient:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(url, json=payload, headers=self.headers)
         if resp.status_code >= 400:
-            print(f"[evolution] falha ao enviar midia: status={resp.status_code}, body={resp.text}, url={url}, payload={payload}")
+            logger.error(
+                "Falha Evolution midia status=%s destino=%s body=%s",
+                resp.status_code,
+                _mask_contact(contato),
+                resp.text[:200],
+            )
         else:
-            print(f"[evolution] midia enviada status={resp.status_code} para {contato}")
+            logger.info("Midia enviada Evolution status=%s destino=%s", resp.status_code, _mask_contact(contato))

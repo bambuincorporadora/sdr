@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     evolution_base_url: str = ""
     evolution_token: str = ""
     evolution_instance: str = ""
+    evolution_webhook_secret: str = ""
     supabase_url: str = ""
     supabase_key: str = ""
     openai_api_key: str = ""
@@ -17,6 +18,7 @@ class Settings(BaseSettings):
     embeddings_model: str = "text-embedding-3-large"
     llm_model: str = "gpt-4o-mini"
     redis_url: str = "redis://localhost:6379/0"
+    webhook_rate_limit_per_minute: int = 120
 
     reengagement_minutes_raw: str = Field(
         default="30,180,360", alias="REENGAGEMENT_MINUTES"

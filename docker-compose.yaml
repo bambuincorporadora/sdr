@@ -10,6 +10,7 @@ services:
       - EVOLUTION_BASE_URL=${EVOLUTION_BASE_URL}
       - EVOLUTION_TOKEN=${EVOLUTION_TOKEN}
       - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE}
+      - EVOLUTION_WEBHOOK_SECRET=${EVOLUTION_WEBHOOK_SECRET:-}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -33,6 +34,7 @@ services:
       - EVOLUTION_BASE_URL=${EVOLUTION_BASE_URL}
       - EVOLUTION_TOKEN=${EVOLUTION_TOKEN}
       - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE}
+      - EVOLUTION_WEBHOOK_SECRET=${EVOLUTION_WEBHOOK_SECRET:-}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_KEY=${SUPABASE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -48,6 +50,32 @@ services:
     working_dir: /app
     command: >
       python scripts/reengagement_runner.py
+
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-dev}
+      - EVOLUTION_BASE_URL=${EVOLUTION_BASE_URL}
+      - EVOLUTION_TOKEN=${EVOLUTION_TOKEN}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE}
+      - EVOLUTION_WEBHOOK_SECRET=${EVOLUTION_WEBHOOK_SECRET:-}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-large}
+      - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REENGAGEMENT_MINUTES=${REENGAGEMENT_MINUTES:-30,180,360}
+      - PYTHONPATH=/app/backend
+    depends_on:
+      - redis
+    working_dir: /app
+    command: >
+      celery -A app.celery_app.celery_app worker --loglevel=info
 
   redis:
     image: redis:7-alpine

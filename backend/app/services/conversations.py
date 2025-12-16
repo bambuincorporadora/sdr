@@ -71,10 +71,12 @@ class ConversationService:
         return res.data[0] if res.data else None
 
     async def create_conversation(self, lead_id: str, status: str = "iniciar") -> Any:
+        timestamp = datetime.utcnow().isoformat()
+
         def _create():
             return (
                 self.client.table("conversas")
-                .insert({"lead_id": lead_id, "status": status})
+                .insert({"lead_id": lead_id, "status": status, "ultima_interacao_em": timestamp})
                 .execute()
             )
 

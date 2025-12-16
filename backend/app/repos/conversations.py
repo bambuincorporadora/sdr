@@ -32,14 +32,18 @@ class ConversationsRepository:
         def _fetch():
             return (
                 self.client.table("conversas")
-                .select("id, lead_id, status, leads(contato)")
+                .select("id, lead_id, status, ultima_interacao_em, leads(contato)")
                 .lte("ultima_interacao_em", threshold.isoformat())
                 .execute()
             )
 
         res = await self._run(_fetch)
         data = res.data or []
-        return [c for c in data if c.get("status") not in self.closed_statuses]
+        return [
+            c
+            for c in data
+            if c.get("status") not in self.closed_statuses and c.get("ultima_interacao_em")
+        ]
 
     async def mark_reengaged(self, conversa_id: str, minutes: int) -> None:
         agendado_para = datetime.utcnow().isoformat()
@@ -60,6 +64,34 @@ class ConversationsRepository:
             )
 
         await self._run(_insert)
+
+    async def has_reengagement_after(self, conversa_id: str, minutes: int, since_iso: str | None) -> bool:
+        def _fetch():
+            return (
+                self.client.table("reengajamentos")
+                .select("executado_em")
+                .eq("conversa_id", conversa_id)
+                .eq("disparo_minutos", minutes)
+                .order("executado_em", desc=True)
+                .limit(1)
+                .execute()
+            )
+
+        res = await self._run(_fetch)
+        rows = res.data or []
+        if not rows:
+            return False
+        executed = rows[0].get("executado_em")
+        if not executed:
+            return False
+        if not since_iso:
+            return True
+        try:
+            executed_dt = datetime.fromisoformat(executed.replace("Z", "+00:00"))
+            since_dt = datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        return executed_dt >= since_dt
 
     async def get_history_text(self, conversa_id: str, limit: int = 20) -> str:
         def _fetch():

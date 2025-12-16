@@ -1,8 +1,8 @@
+import logging
 from typing import Any
 
 from app.chains.intention import intention_router
 from app.chains.qa import qa_chain
-from app.chains.summarizer import summarize_text
 from app.repos.conversations import ConversationsRepository
 from app.services.conversations import ConversationService
 from app.services.evolution import EvolutionClient
@@ -10,6 +10,7 @@ from app.services.evolution import EvolutionClient
 evolution_client = EvolutionClient()
 conversation_service = ConversationService()
 conversations_repo = ConversationsRepository()
+logger = logging.getLogger(__name__)
 
 
 async def process_message(message: Any, override_text: str | None = None) -> dict[str, Any]:
@@ -23,15 +24,18 @@ async def process_message(message: Any, override_text: str | None = None) -> dic
     texto = override_text or message.conteudo or ""
     intent = await intention_router.ainvoke({"input": texto})
     label = getattr(intent, "label", None) or intent.get("label", "ruido")  # suporta BaseModel/dict
+    logger.info("Intent detectada=%s conversa=%s", label, conversa["id"])
+    if label not in {"pergunta", "seguir", "encerrar", "ruido"}:
+        # fallback: se tem interrogação, trata como pergunta, senão como seguir
+        label = "pergunta" if "?" in texto else "seguir"
 
     if label == "pergunta":
         answer = await qa_chain.ainvoke(texto)
         answer_text = answer if isinstance(answer, str) else answer.get("answer") or answer.get("result") or ""
-        short_answer = await summarize_text(answer_text)
-        await evolution_client.send_text(message.contato, short_answer)
-        await conversations_repo.log_message(conversa["id"], "sdr", "texto", short_answer)
+        await evolution_client.send_text(message.contato, answer_text)
+        await conversations_repo.log_message(conversa["id"], "sdr", "texto", answer_text)
         await conversation_service.touch_conversation(conversa["id"], status="respondendo_pergunta")
-        return {"intent": label, "answer": short_answer, "conversa_id": conversa["id"]}
+        return {"intent": label, "answer": answer_text, "conversa_id": conversa["id"]}
 
     if label == "seguir":
         prompt = "Posso seguir com algumas perguntas rapidas?"
