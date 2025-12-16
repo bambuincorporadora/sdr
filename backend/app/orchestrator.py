@@ -22,11 +22,12 @@ async def process_message(message: Any, override_text: str | None = None) -> dic
     )
     texto = override_text or message.conteudo or ""
     intent = await intention_router.ainvoke({"input": texto})
-    label = intent.get("label", "ruido")
+    label = getattr(intent, "label", None) or intent.get("label", "ruido")  # suporta BaseModel/dict
 
     if label == "pergunta":
-        answer = await qa_chain.ainvoke({"query": texto})
-        short_answer = await summarize_text(answer["result"])
+        answer = await qa_chain.ainvoke({"input": texto})
+        answer_text = answer.get("answer") or answer.get("result") or ""
+        short_answer = await summarize_text(answer_text)
         await evolution_client.send_text(message.contato, short_answer)
         await conversations_repo.log_message(conversa["id"], "sdr", "texto", short_answer)
         await conversation_service.touch_conversation(conversa["id"], status="respondendo_pergunta")
