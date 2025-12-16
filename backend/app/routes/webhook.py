@@ -1,5 +1,6 @@
 from typing import Any
 import json
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
@@ -38,7 +39,7 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
         return EvolutionMessage(**raw)
 
     if not isinstance(raw, dict):
-        raise HTTPException(status_code=422, detail="Payload invalido")
+        raise HTTPException(status_code=422, detail="Payload invalido (nao eh JSON/objeto)")
 
     body = raw.get("body") or {}
     data = body.get("data") or {}
@@ -58,8 +59,10 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
         tipo = "texto"
         conteudo = message.get("conversation") or ""
 
-    if not contato or not mensagem_id:
-        raise HTTPException(status_code=422, detail="Campos obrigatorios ausentes no payload Evolution")
+    if not contato:
+        raise HTTPException(status_code=422, detail="Campo contato ausente no payload Evolution")
+    if not mensagem_id:
+        mensagem_id = str(uuid.uuid4())
 
     return EvolutionMessage(
         mensagem_id=mensagem_id,
@@ -75,10 +78,19 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
 async def evolution_webhook(request: Request, tasks: BackgroundTasks):
     try:
         payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=422, detail="Body JSON invalido")
+    except Exception as exc:
+        body_bytes = await request.body()
+        print(f"[webhook] JSON invalido: {exc}; body={body_bytes}")
+        return {"status": "ignored", "reason": "json_invalid"}
 
-    evo_msg = parse_evolution_payload(payload)
+    try:
+        evo_msg = parse_evolution_payload(payload)
+    except HTTPException as exc:
+        print(f"[webhook] payload invalido: {exc.detail}; payload={payload}")
+        return {"status": "ignored", "reason": exc.detail}
+    except Exception as exc:
+        print(f"[webhook] erro inesperado ao parsear payload: {exc}; payload={payload}")
+        return {"status": "ignored", "reason": "parse_error"}
 
     conversa = await conversation_service.ensure_active_conversation(
         contato=evo_msg.contato, canal=evo_msg.canal, conversa_id=evo_msg.conversa_id
