@@ -1,6 +1,12 @@
 import asyncio
-import os
-import time
+import sys
+from pathlib import Path
+
+# garante que o pacote backend/app esteja no PYTHONPATH quando rodado fora do uvicorn
+BASE_DIR = Path(__file__).resolve().parent.parent
+BACKEND_DIR = BASE_DIR / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from app.jobs.reengagement import run_reengagement
 

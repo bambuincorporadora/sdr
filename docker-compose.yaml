@@ -39,9 +39,11 @@ services:
       - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - REENGAGEMENT_MINUTES=${REENGAGEMENT_MINUTES:-30,180,360}
+      - PYTHONPATH=/app/backend
     depends_on:
       - api
       - redis
+    working_dir: /app
     command: >
       python scripts/reengagement_runner.py
 
