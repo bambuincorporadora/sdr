@@ -1,8 +1,9 @@
 fastapi
 uvicorn
-langchain
-langchain-openai
+langchain>=0.2
+langchain-core
 langchain-community
+langchain-openai
 pgvector
 supabase
 psycopg[binary]

@@ -1,5 +1,4 @@
-from langchain.chains.summarize import load_summarize_chain
-from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from app.config import get_settings
@@ -7,10 +6,12 @@ from app.config import get_settings
 settings = get_settings()
 
 llm = ChatOpenAI(model=settings.llm_model, temperature=0)
-summary_chain = load_summarize_chain(llm, chain_type="map_reduce")
+
+prompt = ChatPromptTemplate.from_template(
+    "Resuma o texto a seguir em no maximo 300 tokens, mantendo fatos-chave e tom neutro:\n\n{texto}"
+)
 
 
 async def summarize_text(text: str) -> str:
-    docs = [Document(page_content=text)]
-    result = await summary_chain.ainvoke(docs)
-    return result["output_text"]
+    result = await (prompt | llm).ainvoke({"texto": text})
+    return result.content
