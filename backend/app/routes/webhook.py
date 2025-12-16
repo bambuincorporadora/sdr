@@ -1,11 +1,13 @@
+from typing import Any
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
-from app.orchestrator import process_message
 from app.jobs.transcription import process_transcription
+from app.orchestrator import process_message
+from app.repos.conversations import ConversationsRepository
 from app.services.conversations import ConversationService
 from app.services.evolution import EvolutionClient
-from app.repos.conversations import ConversationsRepository
 
 
 router = APIRouter()
@@ -23,26 +25,78 @@ class EvolutionMessage(BaseModel):
     conversa_id: str | None = None
 
 
-@router.post("/evolution")
-async def evolution_webhook(payload: EvolutionMessage, tasks: BackgroundTasks):
-    conversa = await conversation_service.ensure_active_conversation(
-        contato=payload.contato, canal=payload.canal, conversa_id=payload.conversa_id
+def parse_evolution_payload(raw: Any) -> EvolutionMessage:
+    """
+    Aceita payload direto (EvolutionMessage) ou payload do Evolution (body.data...).
+    """
+    # se vier como lista, pega o primeiro item
+    if isinstance(raw, list) and raw:
+        raw = raw[0]
+    # se já está no formato esperado
+    if isinstance(raw, dict) and all(k in raw for k in ["mensagem_id", "contato", "tipo"]):
+        return EvolutionMessage(**raw)
+
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=422, detail="Payload invalido")
+
+    body = raw.get("body") or {}
+    data = body.get("data") or {}
+    key = data.get("key") or {}
+    message = data.get("message") or {}
+
+    contato = key.get("remoteJid") or body.get("sender") or ""
+    mensagem_id = key.get("id") or ""
+    message_type = data.get("messageType") or ""
+
+    # mapeia tipos
+    if message_type == "conversation":
+        tipo = "texto"
+        conteudo = message.get("conversation")
+    else:
+        # fallback genérico
+        tipo = "texto"
+        conteudo = message.get("conversation") or ""
+
+    if not contato or not mensagem_id:
+        raise HTTPException(status_code=422, detail="Campos obrigatorios ausentes no payload Evolution")
+
+    return EvolutionMessage(
+        mensagem_id=mensagem_id,
+        contato=contato,
+        tipo=tipo,
+        conteudo=conteudo,
+        canal="whatsapp",
+        conversa_id=None,
     )
-    payload.conversa_id = conversa["id"]
+
+
+@router.post("/evolution")
+async def evolution_webhook(payload: Any, tasks: BackgroundTasks):
+    evo_msg = parse_evolution_payload(payload)
+
+    conversa = await conversation_service.ensure_active_conversation(
+        contato=evo_msg.contato, canal=evo_msg.canal, conversa_id=evo_msg.conversa_id
+    )
+    evo_msg.conversa_id = conversa["id"]
 
     # registra mensagem recebida
     logged = await conversations_repo.log_message(
-        conversa_id=payload.conversa_id,
+        conversa_id=evo_msg.conversa_id,
         autor="lead",
-        tipo=payload.tipo,
-        conteudo=payload.conteudo,
+        tipo=evo_msg.tipo,
+        conteudo=evo_msg.conteudo,
     )
 
-    if payload.tipo == "audio":
-        tasks.add_task(process_transcription, payload, conversa, logged["id"])
-        return {"status": "ack", "queued": "transcription", "conversa_id": conversa["id"], "mensagem_id": logged["id"]}
+    if evo_msg.tipo == "audio":
+        tasks.add_task(process_transcription, evo_msg, conversa, logged["id"])
+        return {
+            "status": "ack",
+            "queued": "transcription",
+            "conversa_id": conversa["id"],
+            "mensagem_id": logged["id"],
+        }
     try:
-        response = await process_message(payload)
+        response = await process_message(evo_msg)
     except Exception as exc:  # pragma: no cover - observability hook
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"status": "ok", "response": response, "conversa_id": conversa["id"], "mensagem_id": logged["id"]}
