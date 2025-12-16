@@ -1,5 +1,8 @@
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from typing import List
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -14,11 +17,30 @@ class Settings(BaseSettings):
     embeddings_model: str = "text-embedding-3-large"
     llm_model: str = "gpt-4o-mini"
     redis_url: str = "redis://localhost:6379/0"
-    reengagement_minutes: tuple[int, int, int] = (30, 180, 360)
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    reengagement_minutes_raw: str = Field(
+        default="30,180,360", alias="REENGAGEMENT_MINUTES"
+    )
+    reengagement_minutes: List[int] = Field(default_factory=lambda: [30, 180, 360])
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        populate_by_name=True,
+        extra="ignore",
+    )
+
+    @model_validator(mode="after")
+    def compute_reengagement_minutes(self):
+        raw = self.reengagement_minutes_raw
+        if isinstance(raw, str):
+            cleaned = raw.replace("[", "").replace("]", "")
+            parts = [p.strip() for p in cleaned.split(",") if p.strip()]
+            try:
+                self.reengagement_minutes = [int(p) for p in parts]
+            except ValueError:
+                self.reengagement_minutes = [30, 180, 360]
+        return self
 
 
 @lru_cache
