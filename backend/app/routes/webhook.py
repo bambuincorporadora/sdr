@@ -46,7 +46,7 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
     key = data.get("key") or {}
     message = data.get("message") or {}
 
-    contato = key.get("remoteJid") or body.get("sender") or ""
+    contato = key.get("remoteJid") or key.get("remoteJidAlt") or body.get("sender") or ""
     mensagem_id = key.get("id") or ""
     message_type = data.get("messageType") or ""
 
