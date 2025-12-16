@@ -41,12 +41,12 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
     if not isinstance(raw, dict):
         raise HTTPException(status_code=422, detail="Payload invalido (nao eh JSON/objeto)")
 
-    body = raw.get("body") or {}
-    data = body.get("data") or {}
+    # aceita payload com ou sem body
+    data = raw.get("data") or raw.get("body", {}).get("data", {}) or {}
     key = data.get("key") or {}
     message = data.get("message") or {}
 
-    contato = key.get("remoteJid") or key.get("remoteJidAlt") or body.get("sender") or ""
+    contato = key.get("remoteJid") or key.get("remoteJidAlt") or raw.get("sender") or ""
     if contato and "@s.whatsapp.net" in contato:
         contato = contato.replace("@s.whatsapp.net", "")
     mensagem_id = key.get("id") or ""
