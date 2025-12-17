@@ -207,8 +207,78 @@ Logica de escolha:
   - `chunk` text  
   - `ordem` int  
   - index ivfflat em `embedding`
+- `qualificador_perguntas`  
+  - `id` uuid PK  
+  - `slug` text unique (ex: uso, localizacao, tipologia)
+  - `pergunta` text
+  - `categoria` text (motivacao, perfil_imovel, etc.)
+  - `ordem` int
+  - `opcoes` jsonb (opcional para múltipla escolha)
+  - `ativo` bool
+- `qualificador_fluxo`  
+  - `id` uuid PK
+  - `cenario` text (ex: sem_interesse, com_interesse)
+  - `pergunta_slug` text references qualificador_perguntas(slug)
+  - `ordem` int
+  - `condicao` jsonb (ex: depende de resposta anterior)
 
 Indices recomendados: `idx_mensagens_conversa`, `idx_intencoes_mensagem`, `idx_qualificacao_conversa_pergunta`, `ivfflat_documentos_embeddings`.
+
+## Supabase - Admin e Configurações Dinâmicas
+- `ai_agents` (seed: `intention`, `qa`, `reengagement`, `summarizer`, `document_guardrail`, `document_qa`, `handoff_summary`)
+- `ai_agent_configs` (prompt + modelo + params + metadata)
+- `ai_agent_config_versions` (audit/rollback)
+- `ai_tools` (catálogo global com `schema_json`)
+- `ai_agent_tools` (whitelist habilitando cada tool por agente)
+- `empresa_config` (dados da empresa + `policy_text`/`allowed_topics` + webhook)
+- `admin_users` (controle de acesso do painel via Supabase Auth)
+- `attachments` / `attachment_extractions` (PDF/DOCX salvo em Storage + markdown extraído)
+- `conversation_events` (timeline/auditoria de mensagens, execuções de agentes, tools e webhooks)
+
+Storage: bucket privado `attachments/{conversa_id}/{mensagem_id}/{attachment_id}.{ext}`. Aplicar RLS (download apenas com token ou via backend).
+
+### Autenticação e RLS
+- Backend usa chave de serviço para bypass das políticas.
+- Frontend Admin usa JWT Supabase:
+  - `ai_*`, `empresa_config`, `conversation_events`, `attachments`: `select` permitido apenas se `auth.uid()` em `admin_users` (`ativo=true`); `update` restrito a `role in ('admin','editor')`.
+  - `conversas`, `mensagens`, `leads`: somente leitura para admins; escrita apenas via backend/celery.
+  - Storage: política exigindo `auth.role() = 'authenticated'` e membership em `admin_users`; downloads públicos só com signed URL emitido pelo backend.
+- FastAPI valida JWT (JWKS Supabase) em `/admin/*`, injeta `user_id` e verifica `admin_users.role`.
+
+### Status (implementado vs. pendente)
+- Implementado no backend:
+  - Leitura de `ai_agent_configs` e `empresa_config` no Supabase com cache em memória (TTL).
+  - `conversation_events` para trilha/auditoria do processamento.
+  - Pipeline de anexos PDF/DOCX: download seguro + Storage + extração para markdown + guardrail + resposta baseada no documento.
+  - Handoff via webhook (assinatura HMAC opcional) + persistência em `handoffs`.
+- Pendente (o blueprint descreve, mas ainda precisa ser construído):
+  - Endpoints `/admin/*` (CRUD de prompts/configs/tools/empresa/empreendimentos, leitura de conversas/eventos).
+  - Frontend Admin (telas + autenticação + consumo do backend).
+  - (Opcional) Ajustar seeds (prompts/params/tools) conforme a operação.
+  - (Operacional) Aplicar o bloco de RLS/Storage no Supabase (incluído em `docs/schema.sql`).
+
+### Tools para seed (schema_json no `docs/schema.sql`)
+1. `get_company_config`
+2. `list_empreendimentos`
+3. `get_empreendimento`
+4. `retrieve_documents`
+5. `get_conversation_history`
+6. `save_qualificacao` / `log_event`
+7. `download_attachment`
+8. `store_attachment`
+9. `extract_document_to_markdown`
+10. `document_relevance_check`
+11. `answer_from_document`
+12. `dispatch_handoff_webhook`
+
+Associações iniciais:
+- `qa`: `get_company_config`, `retrieve_documents`
+- `reengagement`: `get_company_config`, `get_conversation_history`
+- `summarizer`: `get_conversation_history`
+- `document_guardrail`: `get_company_config`, `document_relevance_check`
+- `document_qa`: `get_company_config`, `answer_from_document`
+- `handoff_summary`: `get_company_config`, `get_conversation_history`, `dispatch_handoff_webhook`
+- Pipeline técnico (download/store/extract) pode ficar em um agente interno `document_extractor`.
 
 ## Frontend Admin (web)
 - Objetivo: CRUD de empreendimentos, midias, documentos/FAQ; visualizacao de conversas e status de qualificacao/handoff.
@@ -219,7 +289,51 @@ Indices recomendados: `idx_mensagens_conversa`, `idx_intencoes_mensagem`, `idx_q
   - Gestao de documentos/FAQ por empreendimento para feeding de embeddings.
   - Visual de conversas: lista e detalhe com mensagens, intencao detectada, pendencias de qualificacao, proximas perguntas, reengajamentos agendados.
   - Acionamento manual: reenviar midia, forcar handoff, marcar conversa como encerrada.
-- Stack sugerida: React ou Next.js + Supabase Auth; backend FastAPI ja exposto; usar endpoints REST (ou GraphQL se desejar) para CRUD.
+- Telas extras: Prompts/Config (por agente), Tools (habilitar/desabilitar), Empresa (policy), Usuários Admin.
+- Stack sugerida: Next.js (App Router) + Supabase Auth + Shadcn UI. Backend expõe endpoints REST autenticados (JWT Supabase) para CRUD e teste de prompt/tool.
+- Dashboard e monitoramento de conversas:
+  - Lista filtrável de conversas (status, intenção atual, sla de resposta, agente usado, última mensagem).
+  - Detalhe mostrando timeline (mensagens, transcrições, respostas de IA, reengajamentos disparados, anexos).
+  - KPIs: leads ativos, tempo médio até handoff, taxa de resposta; logs com prompts/config usados (para auditoria).
+- Endpoint/API correspondente: `GET /admin/conversations`, `GET /admin/conversations/{id}`, `GET /admin/conversations/{id}/events`.
+
+### Implementação sugerida (Next.js + Supabase Auth)
+1. **Stack**: Next.js 14 (App Router) + TypeScript + Supabase JS client + Shadcn UI + TanStack Query.
+2. **Auth Flow**:
+   - Página `/login` -> Supabase Auth (email/senha).
+   - Middleware valida sessão e consulta `/admin/me` para obter `role`; redireciona se não for ativo.
+3. **Layout/Páginas**:
+   - `/dashboard`: cards (leads ativos, SLA médio), tabela de conversas com filtros (status, intenção, agente).
+   - `/conversations/[id]`: timeline (mensagens, eventos, anexos), resumo rápido, ações (forçar handoff, reenviar).
+   - `/prompts`: lista de agentes, editor de prompt/model/params, histórico de versões (com diff/rollback).
+   - `/tools`: catálogo global + matriz (agent vs tool) com toggles e configs (limites, k, etc.).
+   - `/empresa`: formulário para dados gerais, `policy_text`, contatos, URLs do webhook e secret (com teste de envio).
+   - `/empreendimentos`: CRUD completo + upload de mídias (usando Supabase Storage) + preview.
+   - `/usuarios`: gestão de `admin_users` (só role=admin).
+4. **API Backend (endereços novos)**:
+   - Auth guard: header `Authorization: Bearer <jwt>` validado via JWKS Supabase.
+   - `GET /admin/me` -> retorna user + role.
+   - `GET/PUT /admin/company`
+   - `GET/PUT /admin/agents`, `/admin/agents/{key}`, `/admin/agents/{key}/versions`.
+   - `GET/PUT /admin/tools`, `/admin/agents/{key}/tools`
+   - `GET/POST /admin/empreendimentos`, `/admin/empreendimentos/{id}`, `/midias`
+   - `GET /admin/conversations` (paginação/filtros), `GET /admin/conversations/{id}`, `GET /admin/conversations/{id}/events`
+   - `POST /admin/actions/force-handoff`, `/admin/actions/send-media`
+5. **Observabilidade/UI**:
+   - Component global de “Testar prompt/tool”: chama endpoint `/admin/test-agent`.
+   - Toast/Logs para erro de webhook/handoff (alimentado por `conversation_events`).
+6. **DevFlow**:
+   - Repositório `frontend/` com scripts `pnpm dev`/`build`.
+   - `.env.local` com SUPABASE_URL/KEY; `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+   - Deploy em VPS via Docker/Compose apontando para backend via env `API_BASE_URL`.
+
+## Pipeline de PDF/DOCX
+- Limites: 15 MB, até 40 páginas, timeout de 30s. Rejeitar acima disso com mensagem amigável.
+- MVP: extração via `pdfminer.six` (PDF) e `python-docx` (DOCX).
+- Fase 2 (opcional): Docling como extrator principal (melhor estruturação/layout), mantendo fallback.
+- Cache por `sha256` em `attachments`: se o mesmo arquivo reaparecer, reutilizar `attachment_extractions`.
+- Truncar markdown para ~3k tokens e, na fase 2, gerar embeddings específicos para RAG do anexo.
+- Se o lead enviar documento sem pergunta, confirmar (“Documento salvo, quer que eu analise algo específico?”). Se perguntar sem documento/previamente expirado, solicitar reenvio.
 
 ## Orquestracao - Pseudocodigo (adaptado)
 ```pseudo
@@ -239,6 +353,8 @@ transcrever(mensagem_id):
 
 processar_mensagem(mensagem_id, override_texto?):
   texto = override_texto or mensagem.conteudo
+  config_intencao = ConfigService.get('intention')
+  # agente_intencao usa system_prompt/model vindos do Supabase
   intencao = agente_intencao(texto)
   if intencao == pergunta: resposta = agente_QA(texto)
   elif intencao == seguir: resposta = prox_pergunta_qualificacao()
@@ -247,6 +363,41 @@ processar_mensagem(mensagem_id, override_texto?):
   enviar_resposta(resposta)
   atualizar_estado_conversa()
   agendar_reengajamentos(conversa_id)  # 30min, 3h, 6h; cancelar se lead responder
+
+processar_documento(mensagem_id):
+  anexar = AttachmentService.download_store_extract(mensagem_id)
+  guardrail = agentes.document_guardrail(question=mensagem.conteudo, document_summary=anexar.resumo)
+  if not guardrail.allowed:
+    responder(guardrail.policy_message)
+    return
+  resposta = agentes.document_qa(question=mensagem.conteudo, document_markdown=anexar.markdown)
+  responder(resposta)
+
+# Buffer de mensagens em sequência ("picotadas"):
+# MVP (single-réplica): buffer em memória no processo do FastAPI.
+# Produção multi-réplica: manter no Redis/persistência um registro "pending_text:{conversa_id}".
+# Sempre que chega mensagem textual, append ao buffer e agende (ou reagende) job com countdown (ex: 3-5s).
+# Se chegar nova mensagem antes do job rodar, apenas atualize o buffer e retarde o job.
+# Quando o job disparar, junte todo o texto acumulado e chame processar_mensagem (limpando o buffer).
+# Diferenciar mídia/áudio: processar imediatamente sem buffer.
+
+handoff(conversa_id):
+  resumo = agentes.handoff_summary(
+    question="resuma conversa para corretor",
+    conversation_history=get_conversation_history(conversa_id),
+    company_profile=get_company_config()
+  )
+  payload = {
+    "lead_nome": lead.nome,
+    "lead_contato": lead.contato,
+    "conversa_id": conversa_id,
+    "resumo": resumo,
+    "status": conversa.status
+  }
+  if empresa_config.handoff_webhook_url:
+    dispatch_handoff_webhook(payload, empresa_config.handoff_webhook_url, empresa_config.handoff_webhook_secret)
+  registrar_conversation_event("handoff_webhook", payload)
+  salvar_handoff(resumo, destino=conversa.contato_corretor)
 
 reengajamento_cron():
   pendentes = buscar_reengajamentos_pendentes()
@@ -266,6 +417,9 @@ reengajamento_cron():
 - Urgencia: prazo, disponibilidade para visita.
 - Perguntas em aberto e o que ja foi respondido.
 - Sentimento/atitude percebida.
+- Resumo IA configurável: agente `handoff_summary` usa prompt/versionamento no Supabase e retorna texto estruturado (blocos `contexto`, `oportunidades`, `proximos_passos`).
+- Webhook CRM: backend envia `POST` assinado (`handoff_webhook_secret`) para `empresa_config.handoff_webhook_url` com `lead_nome`, `lead_contato`, `conversa_id`, `resumo`, `status`, `timestamp`, `origem`. Registrar sucesso/falha em `conversation_events`.
+- Robustez: no MVP não há retry automático; para produção, adicionar retentativa (Celery) com backoff + limite e dead-letter, registrando tentativas em `conversation_events`.
 
 ## Consideracoes
 - Evolucao do tom: variar abre/sim/nosso para soar humano.
@@ -273,3 +427,5 @@ reengajamento_cron():
 - Se dado nao existe: admitir e oferecer retorno com canal preferido.
 - Logs: registrar tentativas de transcricao e de QA com confianca para revisao humana.
 - Resumo e envio: respostas longas (especialmente QA) passam por sumarizador e sao quebradas em blocos de 200-400 tokens; enviar blocos em sequencia curta, priorizando fatos principais e oferta de ajuda no final.
+- Admin Frontend: versionar alterações de prompt/tool, registrar auditoria e oferecer "test prompt/tool" com input de exemplo.
+- `conversation_events` armazena timeline completa (mensagens, tools, webhooks) para painel e debugging.

@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     webhook_rate_limit_per_minute: int = 120
     trusted_media_hosts_raw: str = Field(default="", alias="TRUSTED_MEDIA_HOSTS")
+    text_buffer_delay_seconds: int = 4
+    attachments_bucket: str = "attachments"
+    document_max_bytes: int = 15 * 1024 * 1024
+    config_cache_ttl_seconds: int = 60
+    company_config_ttl_seconds: int = 300
+    handoff_webhook_timeout_seconds: int = 5
 
     reengagement_minutes_raw: str = Field(
         default="30,180,360", alias="REENGAGEMENT_MINUTES"

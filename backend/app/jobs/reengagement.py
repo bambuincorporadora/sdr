@@ -8,6 +8,7 @@ from app.chains.reengagement import build_reengagement_message
 from app.prompts.templates import REENGAGEMENT_PROMPTS
 from app.repos.conversations import ConversationsRepository
 from app.services.evolution import EvolutionClient, EvolutionSendError
+from app.services.handoff import handoff_service
 from app.utils.cache import get_redis_client
 
 logger = logging.getLogger(__name__)
@@ -79,22 +80,28 @@ async def run_reengagement(conversas_repo=None) -> None:
                 continue
             resumo = await repo.build_summary(c["id"], status="sem_resposta_24h")
             await repo.send_to_broker(resumo)
-            history = await repo.get_history_text(c["id"], limit=20)
-            msg = await build_reengagement_message(history, REENGAGEMENT_PROMPTS["24h_handoff"])
-            contato = (c.get("leads") or {}).get("contato", "")
-            if not contato:
-                continue
+        history = await repo.get_history_text(c["id"], limit=20)
+        msg = await build_reengagement_message(history, REENGAGEMENT_PROMPTS["24h_handoff"])
+        contato = (c.get("leads") or {}).get("contato", "")
+        if not contato:
+            continue
             try:
                 await evo.send_text(contato, msg)
-            except EvolutionSendError as exc:
-                logger.error(
-                    "Falha ao enviar handoff 24h conversa=%s destino=%s error=%s",
-                    c["id"],
-                    _mask_contact(contato),
-                    exc,
-                )
-                continue
-            await repo.mark_reengaged(c["id"], 1440)
+        except EvolutionSendError as exc:
+            logger.error(
+                "Falha ao enviar handoff 24h conversa=%s destino=%s error=%s",
+                c["id"],
+                _mask_contact(contato),
+                exc,
+            )
+            continue
+        await handoff_service.dispatch_handoff(
+            conversa_id=c["id"],
+            history_text=history,
+            lead={"nome": (c.get("leads") or {}).get("nome"), "contato": contato},
+            status="sem_resposta_24h",
+        )
+        await repo.mark_reengaged(c["id"], 1440)
             if not await _renew_lock(redis_client, lock_value):
                 logger.warning("Lock de reengajamento perdido (24h), abortando execucao.")
                 return

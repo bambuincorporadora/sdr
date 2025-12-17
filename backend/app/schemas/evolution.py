@@ -7,6 +7,7 @@ class EvolutionMedia(BaseModel):
     direct_path: str | None = None
     message_type: str | None = None
     mime_type: str | None = None
+    caption: str | None = None
 
 
 class EvolutionMessage(BaseModel):

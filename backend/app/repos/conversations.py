@@ -93,7 +93,7 @@ class ConversationsRepository:
         def _fetch():
             return (
                 self.client.table("conversas")
-                .select("id, lead_id, status, ultima_interacao_em, leads(contato)")
+                .select("id, lead_id, status, ultima_interacao_em, leads(nome,contato)")
                 .lte("ultima_interacao_em", threshold.isoformat())
                 .execute()
             )
