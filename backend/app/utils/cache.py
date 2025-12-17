@@ -22,10 +22,8 @@ async def set_if_absent(key: str, value: str, ttl_seconds: int) -> bool:
     Set key if it does not exist. Returns True if inserted, False if key existed.
     """
     client = get_redis_client()
-    was_set = await client.setnx(key, value)
-    if was_set:
-        await client.expire(key, ttl_seconds)
-    return bool(was_set)
+    result = await client.set(key, value, ex=ttl_seconds, nx=True)
+    return bool(result)
 
 
 async def delete_key(key: str) -> None:

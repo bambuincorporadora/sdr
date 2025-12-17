@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from app.utils.db import get_supabase_client
@@ -71,7 +71,7 @@ class ConversationService:
         return res.data[0] if res.data else None
 
     async def create_conversation(self, lead_id: str, status: str = "iniciar") -> Any:
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         def _create():
             return (
@@ -101,7 +101,7 @@ class ConversationService:
         return latest
 
     async def touch_conversation(self, conversa_id: str, status: str | None = None) -> None:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         def _update():
             payload: dict[str, Any] = {"ultima_interacao_em": now}

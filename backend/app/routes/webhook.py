@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -10,7 +11,7 @@ from app.config import get_settings
 from app.jobs.transcription import enqueue_transcription
 from app.orchestrator import process_message
 from app.repos.conversations import ConversationsRepository
-from app.schemas.evolution import EvolutionMessage
+from app.schemas.evolution import EvolutionMedia, EvolutionMessage
 from app.services.conversations import ConversationService
 from app.services.evolution import EvolutionClient
 from app.utils.cache import delete_key, get_redis_client, set_if_absent
@@ -42,21 +43,51 @@ def _extract_text(message: dict[str, Any], data: dict[str, Any]) -> str:
     )
 
 
-def _extract_media_payload(message_type: str, message: dict[str, Any]) -> tuple[str, str | None]:
+def _sanitize_media_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    return url
+
+
+def _extract_media_payload(message_type: str, message: dict[str, Any]) -> tuple[str, str | None, dict[str, Any] | None]:
     normalized_type = message_type.lower() if message_type else ""
     if "audioMessage" in message or normalized_type in {"audio", "ptt", "audiomessage"}:
         media = message.get("audioMessage") or message.get("pttMessage") or {}
-        url = media.get("url") or media.get("directPath") or media.get("mediaKey") or None
-        return "audio", url
+        url = _sanitize_media_url(media.get("url"))
+        payload = {
+            "url": url,
+            "media_key": media.get("mediaKey"),
+            "direct_path": media.get("directPath"),
+            "message_type": "audio",
+            "mime_type": media.get("mimetype") or media.get("mimeType"),
+        }
+        return "audio", url, payload
     if "imageMessage" in message or normalized_type in {"image", "imagemessage"}:
         media = message.get("imageMessage") or {}
-        url = media.get("url") or media.get("directPath") or None
-        return "imagem", url
+        url = _sanitize_media_url(media.get("url"))
+        payload = {
+            "url": url,
+            "media_key": media.get("mediaKey"),
+            "direct_path": media.get("directPath"),
+            "message_type": "image",
+            "mime_type": media.get("mimetype") or media.get("mimeType"),
+        }
+        return "imagem", url, payload
     if "documentMessage" in message or normalized_type in {"document", "documentmessage"}:
         media = message.get("documentMessage") or {}
-        url = media.get("url") or media.get("directPath") or None
-        return "documento", url
-    return "texto", None
+        url = _sanitize_media_url(media.get("url"))
+        payload = {
+            "url": url,
+            "media_key": media.get("mediaKey"),
+            "direct_path": media.get("directPath"),
+            "message_type": "document",
+            "mime_type": media.get("mimetype") or media.get("mimeType"),
+        }
+        return "documento", url, payload
+    return "texto", None, None
 
 
 async def _enforce_rate_limit(request: Request) -> None:
@@ -97,13 +128,15 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
     message_type = data.get("messageType") or ""
     nome = data.get("pushName") or raw.get("pushName") or None
 
-    tipo, media_url = _extract_media_payload(message_type, message)
+    tipo, media_url, media_payload = _extract_media_payload(message_type, message)
     conteudo = media_url if media_url else _extract_text(message, data)
 
     if not contato:
         raise HTTPException(status_code=422, detail="Campo contato ausente no payload Evolution")
     if not mensagem_id:
         mensagem_id = str(uuid.uuid4())
+
+    media_model = EvolutionMedia(**media_payload) if media_payload else None
 
     return EvolutionMessage(
         mensagem_id=mensagem_id,
@@ -113,6 +146,7 @@ def parse_evolution_payload(raw: Any) -> EvolutionMessage:
         canal="whatsapp",
         nome=nome,
         conversa_id=None,
+        media=media_model,
     )
 
 
@@ -143,6 +177,7 @@ async def evolution_webhook(request: Request):
         return {"status": "ignored", "reason": "parse_error"}
 
     dedupe_key: str | None = None
+    db_lock_acquired = False
     if evo_msg.mensagem_id:
         dedupe_key = f"evolution:webhook:msg:{evo_msg.mensagem_id}"
         try:
@@ -157,21 +192,35 @@ async def evolution_webhook(request: Request):
                 evo_msg.mensagem_id,
             )
             return {"status": "ignored", "reason": "duplicate"}
+        try:
+            inserted = await conversations_repo.register_incoming_message(evo_msg.mensagem_id)
+        except Exception:
+            if dedupe_key:
+                await delete_key(dedupe_key)
+            raise
+        if not inserted:
+            logger.info(
+                "Mensagem duplicada (db) ignorada contato=%s mensagem_id=%s",
+                _mask_contact(evo_msg.contato),
+                evo_msg.mensagem_id,
+            )
+            return {"status": "ignored", "reason": "duplicate"}
+        db_lock_acquired = True
 
     conversa = await conversation_service.ensure_active_conversation(
         contato=evo_msg.contato, canal=evo_msg.canal, conversa_id=evo_msg.conversa_id, nome=evo_msg.nome
     )
     evo_msg.conversa_id = conversa["id"]
 
-    logged = await conversations_repo.log_message(
-        conversa_id=evo_msg.conversa_id,
-        autor="lead",
-        tipo=evo_msg.tipo,
-        conteudo=evo_msg.conteudo,
-    )
-    await conversation_service.touch_conversation(conversa["id"])
-
     try:
+        logged = await conversations_repo.log_message(
+            conversa_id=evo_msg.conversa_id,
+            autor="lead",
+            tipo=evo_msg.tipo,
+            conteudo=evo_msg.conteudo,
+            evolution_mensagem_id=evo_msg.mensagem_id,
+        )
+        await conversation_service.touch_conversation(conversa["id"])
         if evo_msg.tipo == "audio":
             enqueue_transcription.delay(evo_msg.model_dump(), conversa["id"], logged["id"])
             logger.info(
@@ -190,6 +239,8 @@ async def evolution_webhook(request: Request):
     except Exception as exc:  # pragma: no cover - observability hook
         if dedupe_key:
             await delete_key(dedupe_key)
+        if db_lock_acquired and evo_msg.mensagem_id:
+            await conversations_repo.release_incoming_message(evo_msg.mensagem_id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     logger.info(

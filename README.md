@@ -34,7 +34,7 @@ SUPABASE_KEY=...
 OPENAI_API_KEY=...
 LLM_MODEL=gpt-4o-mini
 WHISPER_MODEL=whisper-1
-EMBEDDINGS_MODEL=text-embedding-3-large
+EMBEDDINGS_MODEL=text-embedding-3-small
 REDIS_URL=redis://localhost:6379/0
 ```
 
@@ -53,7 +53,7 @@ Crie um app React/Next.js consumindo endpoints do backend para CRUD de empreendi
 - Para rodar Redis junto via Coolify, importe o `docker-compose.yml` ou crie um recurso Redis separado e aponte `REDIS_URL`.
 - Comando de start (ja no Dockerfile): `uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir backend`.
 - Serviço de reengajamento: no compose existe o serviço `reengagement` que roda `scripts/reengagement_runner.py` a cada 5 minutos.
-- Para transcricao assincrona, suba tambem o servi�o `worker` (Celery) do compose para tirar carga do webhook.
+- Para transcricao assincrona, suba tambem o servi�o `worker` (Celery) do compose para tirar carga do webhook.
 
 ## Proximos passos
 - Implementar fila de transcricao (Celery/RQ) com Whisper.

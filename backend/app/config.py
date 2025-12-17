@@ -15,10 +15,11 @@ class Settings(BaseSettings):
     supabase_key: str = ""
     openai_api_key: str = ""
     whisper_model: str = "whisper-1"
-    embeddings_model: str = "text-embedding-3-large"
+    embeddings_model: str = "text-embedding-3-small"
     llm_model: str = "gpt-4o-mini"
     redis_url: str = "redis://localhost:6379/0"
     webhook_rate_limit_per_minute: int = 120
+    trusted_media_hosts_raw: str = Field(default="", alias="TRUSTED_MEDIA_HOSTS")
 
     reengagement_minutes_raw: str = Field(
         default="30,180,360", alias="REENGAGEMENT_MINUTES"
@@ -42,6 +43,13 @@ class Settings(BaseSettings):
             except ValueError:
                 return [30, 180, 360]
         return [30, 180, 360]
+
+    @property
+    def trusted_media_hosts(self) -> list[str]:
+        if not self.trusted_media_hosts_raw:
+            return []
+        hosts = [h.strip().lower() for h in self.trusted_media_hosts_raw.split(",") if h.strip()]
+        return hosts
 
 
 @lru_cache

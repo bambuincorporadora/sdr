@@ -56,6 +56,7 @@ create table if not exists mensagens (
   autor text check (autor in ('lead','sdr','corretor')),
   tipo text check (tipo in ('texto','audio','imagem','documento')),
   conteudo text,
+  evolution_mensagem_id text unique,
   recebido_em timestamptz default now()
 );
 
@@ -127,7 +128,7 @@ create table if not exists documentos (
 create table if not exists documentos_embeddings (
   id uuid primary key default gen_random_uuid(),
   documento_id uuid references documentos(id) on delete cascade,
-  -- defina a dimensao conforme o modelo de embeddings usado (ex: 1536 para text-embedding-3-large)
+  -- defina a dimensao conforme o modelo de embeddings usado (ex: 1536 para text-embedding-3-small)
   embedding vector(1536),
   chunk text,
   ordem int
@@ -153,6 +154,11 @@ create table if not exists reengajamentos (
   status text,
   mensagem text,
   criacao_em timestamptz default now()
+);
+
+create table if not exists evolution_webhook_events (
+  mensagem_id text primary key,
+  recebido_em timestamptz default now()
 );
 
 -- Indices recomendados

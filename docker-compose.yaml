@@ -15,7 +15,7 @@ services:
       - SUPABASE_KEY=${SUPABASE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-large}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-small}
       - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - REENGAGEMENT_MINUTES=${REENGAGEMENT_MINUTES:-30,180,360}
@@ -39,7 +39,7 @@ services:
       - SUPABASE_KEY=${SUPABASE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-large}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-small}
       - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - REENGAGEMENT_MINUTES=${REENGAGEMENT_MINUTES:-30,180,360}
@@ -66,7 +66,7 @@ services:
       - SUPABASE_KEY=${SUPABASE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-large}
+      - EMBEDDINGS_MODEL=${EMBEDDINGS_MODEL:-text-embedding-3-small}
       - WHISPER_MODEL=${WHISPER_MODEL:-whisper-1}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - REENGAGEMENT_MINUTES=${REENGAGEMENT_MINUTES:-30,180,360}
